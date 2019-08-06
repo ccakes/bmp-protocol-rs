@@ -1,0 +1,6 @@
+/target
+**/*.rs.bk
+Cargo.lock
+
+# Test dumps from bmp-play.py
+test_data/*.dump
