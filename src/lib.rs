@@ -92,7 +92,7 @@ impl Decoder {
                                 caps
                             },
                             _ => {
-                                log::warn!("Missing BGP OPENs");
+                                log::warn!("Missing BGP OPENs (local: {} remote: {}", message.local_addr, peer_header.peer_addr);
 
                                 let mut caps = Capabilities::default();
                                 if !peer_header.peer_flags.A { caps.FOUR_OCTET_ASN_SUPPORT = true; }
@@ -121,16 +121,16 @@ impl Decoder {
                     .ok_or_else(|| Error::new(ErrorKind::Other, format!("No capabilities found for neighbor {}", peer_header.peer_addr)))?;
 
                 let header = bgp_rs::Header::parse(&mut cur)?;
-                // let update = bgp_rs::Update::parse(&header, &mut cur, &capabilities)?;
-                let update = match bgp_rs::Update::parse(&header, &mut cur, &capabilities) {
-                    Ok(u) => Ok(u),
-                    Err(e) => {
-                        log::error!("{}", e);
-                        dbg!(&peer_header, &length, &capabilities);
-                        Err(e)
-                    }
-                }?;
-                
+                let update = bgp_rs::Update::parse(&header, &mut cur, &capabilities)?;
+                // let update = match bgp_rs::Update::parse(&header, &mut cur, &capabilities) {
+                //     Ok(u) => Ok(u),
+                //     Err(e) => {
+                //         log::error!("{}", e);
+                //         dbg!(version, length, kind, &peer_header, &capabilities);
+                //         Err(e)
+                //     }
+                // }?;
+
                 MessageData::RouteMonitoring((peer_header, update))
             },
             _ => MessageData::Unimplemented
