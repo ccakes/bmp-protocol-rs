@@ -1,0 +1,7 @@
+Revision history for bmp-protocol
+
+0.1.1
+        - Remove some erroneous panics
+
+0.1.0
+        - Initial release

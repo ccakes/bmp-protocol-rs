@@ -82,8 +82,8 @@ impl Decoder {
                         match (&message.sent_open, &message.recv_open) {
                             (Some(s), Some(r)) => {
                                 let mut caps = Capabilities::common(s, r)
-                                    .unwrap_or_else(|| {
-                                        log::warn!("Error parsing BGP OPENs");
+                                    .unwrap_or_else(|e| {
+                                        log::warn!("Error parsing BGP OPENs: {}", e);
                                         Capabilities::default()
                                     });
 
