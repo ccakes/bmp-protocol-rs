@@ -77,23 +77,16 @@ impl Decoder {
                 let message = PeerUp::decode(&peer_header.peer_flags, &mut cur)?;
 
                 // Record the speaker capabilities, we'll use these later
-                // if !self.client_capabilities.contains_key(&peer_header.peer_addr) {
-                //     match (&message.sent_open, &message.recv_open) {
-                //         (Some(s), Some(r)) => {
-                //             let mut caps = Capabilities::common(s, r).expect("missing capabilities");
-                //             // Use the BMP header val, not the negotiated val
-                //             if !peer_header.peer_flags.A { caps.FOUR_OCTET_ASN_SUPPORT = true; }
-                            
-                //             self.client_capabilities.insert(peer_header.peer_addr, caps);
-                //         },
-                //         _ => { log::warn!("Missing BGP OPENs"); }
-                //     };
-                // }
                 self.client_capabilities.entry(peer_header.peer_addr)
                     .or_insert_with(|| {
                         match (&message.sent_open, &message.recv_open) {
                             (Some(s), Some(r)) => {
-                                let mut caps = Capabilities::common(s, r).expect("missing capabilities");
+                                let mut caps = Capabilities::common(s, r)
+                                    .unwrap_or_else(|| {
+                                        log::warn!("Error parsing BGP OPENs");
+                                        Capabilities::default()
+                                    });
+
                                 // Use the BMP header val, not the negotiated val
                                 if !peer_header.peer_flags.A { caps.FOUR_OCTET_ASN_SUPPORT = true; }
                                 caps
