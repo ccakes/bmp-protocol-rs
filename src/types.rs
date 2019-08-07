@@ -54,7 +54,7 @@ impl From<u8> for MessageKind {
             5 => MessageKind::Termination,
             6 => MessageKind::RouteMirroring,
 
-            _ => panic!("invalid value for BMP Message Type"),
+            v @ _ => panic!("invalid value for BMP Message Type: {}", v),
         }
     }
 }
@@ -92,7 +92,7 @@ impl From<u8> for PeerType {
             1 => PeerType::RdInstance,
             2 => PeerType::LocalInstance,
 
-            _ => panic!("invalid value for BMP Peer Type"),
+            v @ _ => panic!("invalid value for BMP Peer Type: {}", v),
         }
     }
 }
@@ -148,7 +148,7 @@ impl From<u16> for InformationType {
             1 => InformationType::SysDescr,
             2 => InformationType::SysName,
 
-            _ => panic!("invalid value for BMP Information Type"),
+            v @ _ => panic!("invalid value for BMP Information Type: {}", v),
         }
     }
 }

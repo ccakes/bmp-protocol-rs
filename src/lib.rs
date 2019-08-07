@@ -6,7 +6,8 @@
 //! to provide telemetry relating to BGP state.
 //!
 //! ## Errors
-//! This crate doesn't panic intentionally at any point.
+//! This crate will panic if the BMP headers don't decode correctly, but as soon as we have
+//! a valid set of headers, failures on decoding the inner BGP messages will be handled via Result<T>
 
 mod types;
 pub use self::types::*;
