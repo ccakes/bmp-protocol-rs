@@ -83,7 +83,7 @@ impl Decoder {
                             (Some(s), Some(r)) => {
                                 let mut caps = Capabilities::common(s, r)
                                     .unwrap_or_else(|e| {
-                                        log::warn!("Error parsing BGP OPENs: {}", e);
+                                        log::warn!("Error parsing BGP OPENs (local: {} remote: {}): {}", message.local_addr, peer_header.peer_addr, e);
                                         Capabilities::default()
                                     });
 

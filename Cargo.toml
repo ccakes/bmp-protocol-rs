@@ -5,7 +5,7 @@ authors = ["Cameron Daniel <cam.daniel@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-bgp-rs = { git = "https://github.com/ccakes/bgp-rs", rev = "f3f68c2" }
+bgp-rs = { git = "https://github.com/ccakes/bgp-rs", rev = "3fc910e" }
 # bgp-rs = { path = "../bgp-rs" }
 byteorder = { version = "1.3", features = ['i128'] }
 hashbrown = "0.5"
