@@ -18,7 +18,7 @@ const BMP_HEADER_LEN: usize = 5;
 #[derive(Clone, Debug)]
 enum DecoderState {
     Head,
-    Data(usize)
+    Data((u8, usize))
 }
 
 /// Decoder implementation for use with a FramedReader
@@ -37,20 +37,21 @@ impl BmpDecoder {
         }
     }
 
-    fn decode_length(&mut self, src: &mut BytesMut) -> std::io::Result<Option<usize>> {
+    fn decode_head(&mut self, src: &mut BytesMut) -> std::io::Result<Option<(u8, usize)>> {
         if src.len() < BMP_HEADER_LEN {
             return Ok(None);
         }
 
-        let _version = src.get_u8();
+        let version = src.get_u8();
         let length = src.get_u32() as usize;
+        let remaining = length - BMP_HEADER_LEN;
 
-        src.reserve(length);
+        src.reserve(remaining);
 
-        Ok(Some(length))
+        Ok(Some((version, remaining)))
     }
 
-    fn decode_data(&mut self, length: usize, src: &mut BytesMut) -> std::io::Result<Option<BmpMessage>> {
+    fn decode_data(&mut self, version: u8, length: usize, src: &mut BytesMut) -> std::io::Result<Option<BmpMessage>> {
         // The BytesMut should already have the required capacity reserved so if we haven't read
         // the entire message yet, just keep on reading!
         if src.len() < length {
@@ -60,13 +61,9 @@ impl BmpDecoder {
         // Now we take the message while leaving anything else in the buffer
         let mut buf = src.split_to(length);
 
-        // ..and decode it, starting from the very beginning
-        let version = src.get_u8();
-        let _length = src.get_u32();
-        let kind: MessageKind = src.get_u8().into();
-
         // Now decode based on the MessageKind
-        let juice = match kind {
+        let kind: MessageKind = buf.get_u8().into();
+        let message = match kind {
             MessageKind::Initiation => {
                 let mut tlv = vec![];
                 while buf.remaining() > 0 {
@@ -150,15 +147,9 @@ impl BmpDecoder {
             _ => MessageData::Unimplemented
         };
 
-        Ok(Some(
-            BmpMessage {
-                version: version,
-                kind: kind,
-
-                // peer_header,
-                message: juice
-            }
-        ))
+        Ok(
+            Some(BmpMessage { version, kind, message })
+        )
     }
 }
 
@@ -167,20 +158,20 @@ impl Decoder for BmpDecoder {
     type Error = std::io::Error;
 
     fn decode(&mut self, src: &mut BytesMut) -> std::io::Result<Option<BmpMessage>> {
-        let n = match self.state {
+        let (version, length) = match self.state {
             DecoderState::Head => {
-                match self.decode_length(src)? {
-                    Some(n) => {
-                        self.state = DecoderState::Data(n);
-                        n
+                match self.decode_head(src)? {
+                    Some((ver, len)) => {
+                        self.state = DecoderState::Data((ver, len));
+                        (ver, len)
                     },
                     None => return Ok(None)
                 }
             },
-            DecoderState::Data(n) => n
+            DecoderState::Data((ver, len)) => (ver, len)
         };
 
-        match self.decode_data(n, src)? {
+        match self.decode_data(version, length, src)? {
             Some(message) => {
                 self.state = DecoderState::Head;
                 src.reserve(BMP_HEADER_LEN);

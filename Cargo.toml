@@ -1,11 +1,13 @@
 [package]
 name = "bmp-protocol"
-version = "0.1.1"
+version = "0.1.2"
 authors = ["Cameron Daniel <cam.daniel@gmail.com>"]
 edition = "2018"
+repository = "https://github.com/ccakes/bmp-protocol-rs"
+readme = "README.md"
+license = "MIT"
 
 [dependencies]
-# bgp-rs = { git = "https://github.com/ccakes/bgp-rs", rev = "3fc910e" }
 bgp-rs = { path = "../bgp-rs" }
 # bgp-rs = "^0.5"
 bytes = "*"
@@ -14,3 +16,6 @@ hashbrown = "0.7"
 tokio = { version = "^0.2", features = ["tcp"] }
 tokio-util = { version = "^0.3", features = ["codec"] }
 tracing = "^0.1"
+
+[dev-dependencies]
+tokio = { version = "^0.2", features = ["fs", "net", "rt-core", "macros"] }
