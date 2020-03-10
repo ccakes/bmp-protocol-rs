@@ -1,7 +1,11 @@
-use bytes::{Buf, BytesMut};
+use bytes::{
+    Buf,
+    buf::BufExt,
+    BytesMut
+};
 
 use std::fmt;
-use std::io::{Cursor, Error};
+use std::io::Error;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 /// There are a few different types of BMP message, refer to RFC7xxx for details. This enum
@@ -10,7 +14,6 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 pub enum MessageData {
     /// Used to represent a message type I haven't implemented yet
     Unimplemented,
-
     /// Initiation message, this is sent once at the start of a BMP session to advertise speaker
     /// information
     Initiation(Vec<InformationTlv>),
@@ -323,21 +326,21 @@ impl PeerUp {
             });
         }
 
-        let mut cur = Cursor::new(buf);
+        let mut rdr = buf.reader();
 
-        let sent_hdr = bgp_rs::Header::parse(&mut cur)?;
+        let sent_hdr = bgp_rs::Header::parse(&mut rdr)?;
         assert!(sent_hdr.record_type == 1);
-        let sent_open = Some(bgp_rs::Open::parse(&mut cur)?);
+        let sent_open = Some(bgp_rs::Open::parse(&mut rdr)?);
 
-        let recv_hdr = bgp_rs::Header::parse(&mut cur)?;
+        let recv_hdr = bgp_rs::Header::parse(&mut rdr)?;
         assert!(recv_hdr.record_type == 1);
-        let recv_open = Some(bgp_rs::Open::parse(&mut cur)?);
+        let recv_open = Some(bgp_rs::Open::parse(&mut rdr)?);
 
         let mut information = vec![];
-        // while buf.remaining() > 0 {
-        //     let kind = buf.get_u16();
-        //     information.push( InformationTlv::decode(kind, buf)? );
-        // }
+        while buf.remaining() > 0 {
+            let kind = buf.get_u16();
+            information.push( InformationTlv::decode(kind, buf)? );
+        }
 
         Ok(PeerUp {
             local_addr,

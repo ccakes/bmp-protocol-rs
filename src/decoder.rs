@@ -1,9 +1,13 @@
 use crate::types::*;
 
 use bgp_rs::{AFI, SAFI, AddPathDirection, Capabilities};
-use bytes::{Buf, BytesMut};
+use bytes::{
+    Buf,
+    buf::BufExt,
+    BytesMut
+};
 use hashbrown::HashMap;
-use tokio_util::codec::Decoder as DecoderTrait;
+use tokio_util::codec::Decoder;
 
 use std::io::{Error, ErrorKind};
 use std::net::IpAddr;
@@ -17,13 +21,15 @@ enum DecoderState {
     Data(usize)
 }
 
+/// Decoder implementation for use with a FramedReader
 #[derive(Clone, Debug)]
-pub struct Decoder {
+pub struct BmpDecoder {
     client_capabilities: HashMap<IpAddr, Capabilities>,
     state: DecoderState,
 }
 
-impl Decoder {
+impl BmpDecoder {
+    /// Create a new instance of the Decoder
     pub fn new() -> Self {
         Self {
             client_capabilities: HashMap::new(),
@@ -36,7 +42,7 @@ impl Decoder {
             return Ok(None);
         }
 
-        let version = src.get_u8();
+        let _version = src.get_u8();
         let length = src.get_u32() as usize;
 
         src.reserve(length);
@@ -56,7 +62,7 @@ impl Decoder {
 
         // ..and decode it, starting from the very beginning
         let version = src.get_u8();
-        let length = src.get_u32();
+        let _length = src.get_u32();
         let kind: MessageKind = src.get_u8().into();
 
         // Now decode based on the MessageKind
@@ -127,8 +133,9 @@ impl Decoder {
                     // .ok_or_else(|| format_err!("No capabilities found for neighbor {}", peer_header.peer_addr))?;
                     .ok_or_else(|| Error::new(ErrorKind::Other, format!("No capabilities found for neighbor {}", peer_header.peer_addr)))?;
 
-                let header = bgp_rs::Header::parse(&mut buf)?;
-                let update = bgp_rs::Update::parse(&header, &mut buf, &capabilities)?;
+                let mut rdr = buf.reader();
+                let header = bgp_rs::Header::parse(&mut rdr)?;
+                let update = bgp_rs::Update::parse(&header, &mut rdr, &capabilities)?;
                 // let update = match bgp_rs::Update::parse(&header, &mut cur, &capabilities) {
                 //     Ok(u) => Ok(u),
                 //     Err(e) => {
@@ -152,5 +159,35 @@ impl Decoder {
                 message: juice
             }
         ))
+    }
+}
+
+impl Decoder for BmpDecoder {
+    type Item = BmpMessage;
+    type Error = std::io::Error;
+
+    fn decode(&mut self, src: &mut BytesMut) -> std::io::Result<Option<BmpMessage>> {
+        let n = match self.state {
+            DecoderState::Head => {
+                match self.decode_length(src)? {
+                    Some(n) => {
+                        self.state = DecoderState::Data(n);
+                        n
+                    },
+                    None => return Ok(None)
+                }
+            },
+            DecoderState::Data(n) => n
+        };
+
+        match self.decode_data(n, src)? {
+            Some(message) => {
+                self.state = DecoderState::Head;
+                src.reserve(BMP_HEADER_LEN);
+
+                Ok(Some(message))
+            },
+            None => Ok(None)
+        }
     }
 }
