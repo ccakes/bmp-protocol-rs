@@ -1,7 +1,7 @@
-use byteorder::{BigEndian, ReadBytesExt};
+use bytes::{Buf, BytesMut};
 
 use std::fmt;
-use std::io::{Cursor, Error, Read};
+use std::io::{Cursor, Error};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 /// There are a few different types of BMP message, refer to RFC7xxx for details. This enum
@@ -203,21 +203,21 @@ pub struct PeerHeader {
 }
 
 impl PeerHeader {
-    pub(super) fn decode(cur: &mut Cursor<Vec<u8>>) -> Result<Self, Error> {
-        let peer_type: PeerType = cur.read_u8()?.into();
-        let peer_flags: PeerFlags = cur.read_u8()?.into();
-        let peer_distinguisher = (cur.read_u32::<BigEndian>()?, cur.read_u32::<BigEndian>()?);
+    pub(super) fn decode(buf: &mut BytesMut) -> Result<Self, Error> {
+        let peer_type: PeerType = buf.get_u8().into();
+        let peer_flags: PeerFlags = buf.get_u8().into();
+        let peer_distinguisher = (buf.get_u32(), buf.get_u32());
 
         let peer_addr = match peer_flags.V {
             // IPv4
             false => {
                 // Throw away 12 bytes
-                cur.read_exact(&mut [0u8; 12])?;
-                IpAddr::V4( Ipv4Addr::from(cur.read_u32::<BigEndian>()?) )
+                buf.advance(12);
+                IpAddr::V4( Ipv4Addr::from(buf.get_u32()) )
             },
             // IPv6
             true => {
-                IpAddr::V6( Ipv6Addr::from(cur.read_u128::<BigEndian>()?) )
+                IpAddr::V6( Ipv6Addr::from(buf.get_u128()) )
             }
         };
 
@@ -225,17 +225,17 @@ impl PeerHeader {
             // 2 byte ASNs
             true => {
                 // Throw away 2 bytes
-                cur.read_exact(&mut [0u8; 2])?;
-                u32::from( cur.read_u16::<BigEndian>()? )
+                buf.advance(2);
+                u32::from( buf.get_u16() )
             },
             // 4 byte ASNs
-            false => cur.read_u32::<BigEndian>()?
+            false => buf.get_u32()
         };
 
-        let peer_bgp_id = Ipv4Addr::from( cur.read_u32::<BigEndian>()? );
+        let peer_bgp_id = Ipv4Addr::from( buf.get_u32() );
 
-        let timestamp = cur.read_u32::<BigEndian>()?;
-        let timestamp_ms = cur.read_u32::<BigEndian>()?;
+        let timestamp = buf.get_u32();
+        let timestamp_ms = buf.get_u32();
 
         Ok(Self {
             peer_type,
@@ -262,13 +262,11 @@ pub struct InformationTlv {
 }
 
 impl InformationTlv {
-    pub(super) fn decode(cur: &mut Cursor<Vec<u8>>) -> Result<Self, Error> {
-        let information_type = InformationType::from( cur.read_u16::<BigEndian>()? );
-        let len = cur.read_u16::<BigEndian>()?;
+    pub(super) fn decode(kind: u16, buf: &mut BytesMut) -> Result<Self, Error> {
+        let information_type = InformationType::from(kind);
+        let len = buf.get_u16() as usize;
 
-        let mut val_buf = vec![0u8; len as usize];
-        cur.read_exact(&mut val_buf)?;
-        let value = String::from_utf8(val_buf).unwrap();
+        let value = String::from_utf8((buf.bytes())[..len].to_vec()).unwrap();
 
         Ok(Self { information_type, value })
     }
@@ -295,26 +293,26 @@ pub struct PeerUp {
 }
 
 impl PeerUp {
-    pub(super) fn decode(peer_flags: &PeerFlags, cur: &mut Cursor<Vec<u8>>) -> Result<Self, Error> {
+    pub(super) fn decode(peer_flags: &PeerFlags, buf: &mut BytesMut) -> Result<Self, Error> {
         let local_addr = match peer_flags.V {
             // IPv4
             false => {
                 // Throw away 12 bytes
-                cur.read_exact(&mut [0u8; 12])?;
-                IpAddr::V4( Ipv4Addr::from(cur.read_u32::<BigEndian>()?) )
+                buf.advance(12);
+                IpAddr::V4( Ipv4Addr::from(buf.get_u32()) )
             },
             // IPv6
             true => {
-                IpAddr::V6( Ipv6Addr::from(cur.read_u128::<BigEndian>()?) )
+                IpAddr::V6( Ipv6Addr::from(buf.get_u128()) )
             }
         };
 
-        let local_port = cur.read_u16::<BigEndian>()?;
-        let remote_port = cur.read_u16::<BigEndian>()?;
+        let local_port = buf.get_u16();
+        let remote_port = buf.get_u16();
 
         // For at least some routers (ie adm-b1) the PeerUp messages are missing the
         // OPENs. Short-circuit here until I can figure out whats going on
-        if cur.position() == cur.get_ref().len() as u64 {
+        if buf.remaining() == 0 {
             return Ok(PeerUp {
                 local_addr,
                 local_port,
@@ -325,21 +323,21 @@ impl PeerUp {
             });
         }
 
-        let sent_hdr = bgp_rs::Header::parse(cur)?;
+        let mut cur = Cursor::new(buf);
+
+        let sent_hdr = bgp_rs::Header::parse(&mut cur)?;
         assert!(sent_hdr.record_type == 1);
-        let sent_open = Some(bgp_rs::Open::parse(cur)?);
+        let sent_open = Some(bgp_rs::Open::parse(&mut cur)?);
 
-        let recv_hdr = bgp_rs::Header::parse(cur)?;
+        let recv_hdr = bgp_rs::Header::parse(&mut cur)?;
         assert!(recv_hdr.record_type == 1);
-        let recv_open = Some(bgp_rs::Open::parse(cur)?);
-
-        // Get the inner buffer length, then pull out TLVs until it's consumed
-        let buf_len = cur.get_ref().len() as u64;
+        let recv_open = Some(bgp_rs::Open::parse(&mut cur)?);
 
         let mut information = vec![];
-        while cur.position() < buf_len {
-            information.push( InformationTlv::decode(cur)? );
-        }
+        // while buf.remaining() > 0 {
+        //     let kind = buf.get_u16();
+        //     information.push( InformationTlv::decode(kind, buf)? );
+        // }
 
         Ok(PeerUp {
             local_addr,
