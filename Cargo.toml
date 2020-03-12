@@ -1,18 +1,29 @@
 [package]
 name = "bmp-protocol"
+description = "Tokio-based BMP protocol decoder"
 version = "0.1.2"
 authors = ["Cameron Daniel <cam.daniel@gmail.com>"]
 edition = "2018"
-repository = "https://github.com/ccakes/bmp-protocol-rs"
 readme = "README.md"
 license = "MIT"
+keywords = ["bgp", "parser"]
+categories = ["parsing", "network-programming"]
+repository = "https://github.com/ccakes/bmp-protocol-rs"
+homepage = "https://github.com/ccakes/bmp-protocol-rs"
+documentation = "https://docs.rs/bmp-protocol"
+
+exclude = [
+    "test_data/*",
+]
 
 [dependencies]
-bgp-rs = { path = "../bgp-rs" }
-# bgp-rs = "^0.5"
-bytes = "*"
+# bgp-rs = { path = "../ccakes-bgp-rs" }
+bgp-rs = { git = "https://github.com/ccakes/bgp-rs" }
+bytes = "^0.5"
 byteorder = { version = "1.2", features = ['i128'] }
 hashbrown = "0.7"
+serde = "^1.0"
+serde_derive = "^1.0"
 tokio = { version = "^0.2", features = ["tcp"] }
 tokio-util = { version = "^0.3", features = ["codec"] }
 tracing = "^0.1"

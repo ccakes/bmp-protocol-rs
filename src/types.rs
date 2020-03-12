@@ -3,6 +3,7 @@ use bytes::{
     buf::BufExt,
     BytesMut
 };
+use serde_derive::Serialize;
 
 use std::fmt;
 use std::io::Error;
@@ -10,7 +11,7 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 /// There are a few different types of BMP message, refer to RFC7xxx for details. This enum
 /// encapsulates the different types
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub enum MessageData {
     /// Used to represent a message type I haven't implemented yet
     Unimplemented,
@@ -25,7 +26,7 @@ pub enum MessageData {
 }
 
 /// BMP Message Types (RFC7854 Section 10.1)
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize)]
 #[repr(u8)]
 pub enum MessageKind {
     /// Route Monitoring
@@ -77,7 +78,7 @@ impl fmt::Display for MessageKind {
 }
 
 /// BMP Peer Types (RFC7854 Section 10.2)
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize)]
 #[repr(u8)]
 pub enum PeerType {
     /// Global Instance Peer
@@ -111,7 +112,7 @@ impl fmt::Display for PeerType {
 }
 
 /// BMP Peer Flags (RFC7854 Section 10.3)
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize)]
 #[allow(non_snake_case)]
 pub struct PeerFlags {
     /// Indicates whether the Peer address is an IPv6 addr
@@ -134,7 +135,7 @@ impl From<u8> for PeerFlags {
 }
 
 /// BMP Initiation Message TLVs (RFC7854 Section 10.5)
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize)]
 pub enum InformationType {
     /// Generic String
     String,
@@ -167,7 +168,7 @@ impl fmt::Display for InformationType {
 }
 
 /// Message contaner
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct BmpMessage {
     /// BMP version (should be 3)
     pub version: u8,
@@ -184,8 +185,7 @@ pub struct BmpMessage {
 /// The per-peer header follows the common header for most BMP messages.
 /// The rest of the data in a BMP message is dependent on the MessageKind
 /// field in the common header.
-#[derive(Copy, Clone, Debug)]
-// #[derive(Clone, Debug)]
+#[derive(Copy, Clone, Debug, Serialize)]
 pub struct PeerHeader {
     /// Peer Type
     pub peer_type: PeerType,
@@ -256,7 +256,7 @@ impl PeerHeader {
 /// Information TLV
 ///
 /// The Information TLV is used by the Initiation and Peer Up messages.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct InformationTlv {
     /// TLV message type
     pub information_type: InformationType,
@@ -279,7 +279,7 @@ impl InformationTlv {
 ///
 /// The Peer Up message is used to indicate that a peering session has
 /// come up (i.e., has transitioned into the Established state).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct PeerUp {
     /// Local IP address used in BGP TCP session
     pub local_addr: IpAddr,
