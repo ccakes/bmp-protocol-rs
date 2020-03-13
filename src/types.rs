@@ -1,3 +1,4 @@
+use crate::{Error, Result};
 use bytes::{
     Buf,
     buf::BufExt,
@@ -5,8 +6,8 @@ use bytes::{
 };
 use serde_derive::Serialize;
 
+use std::convert::{TryFrom, TryInto};
 use std::fmt;
-use std::io::Error;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 /// There are a few different types of BMP message, refer to RFC7xxx for details. This enum
@@ -47,18 +48,22 @@ pub enum MessageKind {
     // __Invalid
 }
 
-impl From<u8> for MessageKind {
-    fn from(value: u8) -> Self {
-        match value {
-            0 => MessageKind::RouteMonitoring,
-            1 => MessageKind::StatisticsReport,
-            2 => MessageKind::PeerDown,
-            3 => MessageKind::PeerUp,
-            4 => MessageKind::Initiation,
-            5 => MessageKind::Termination,
-            6 => MessageKind::RouteMirroring,
+impl TryFrom<u8> for MessageKind {
+    type Error = Error;
 
-            v @ _ => panic!("invalid value for BMP Message Type: {}", v),
+    fn try_from(value: u8) -> Result<Self> {
+        match value {
+            0 => Ok(MessageKind::RouteMonitoring),
+            1 => Ok(MessageKind::StatisticsReport),
+            2 => Ok(MessageKind::PeerDown),
+            3 => Ok(MessageKind::PeerUp),
+            4 => Ok(MessageKind::Initiation),
+            5 => Ok(MessageKind::Termination),
+            6 => Ok(MessageKind::RouteMirroring),
+
+            v @ _ => Err(
+                Error::decode(&format!("invalid value for BMP Message Type: {}", v))
+            ),
         }
     }
 }
@@ -89,14 +94,18 @@ pub enum PeerType {
     LocalInstance = 2,
 }
 
-impl From<u8> for PeerType {
-    fn from(value: u8) -> Self {
-        match value {
-            0 => PeerType::GlobalInstance,
-            1 => PeerType::RdInstance,
-            2 => PeerType::LocalInstance,
+impl TryFrom<u8> for PeerType {
+    type Error = Error;
 
-            v @ _ => panic!("invalid value for BMP Peer Type: {}", v),
+    fn try_from(value: u8) -> Result<Self> {
+        match value {
+            0 => Ok(PeerType::GlobalInstance),
+            1 => Ok(PeerType::RdInstance),
+            2 => Ok(PeerType::LocalInstance),
+
+            v @ _ => Err(
+                Error::decode(&format!("invalid value for BMP Peer Type: {}", v))
+            ),
         }
     }
 }
@@ -145,14 +154,18 @@ pub enum InformationType {
     SysName,
 }
 
-impl From<u16> for InformationType {
-    fn from(value: u16) -> Self {
-        match value {
-            0 => InformationType::String,
-            1 => InformationType::SysDescr,
-            2 => InformationType::SysName,
+impl TryFrom<u16> for InformationType {
+    type Error = Error;
 
-            v @ _ => panic!("invalid value for BMP Information Type: {}", v),
+    fn try_from(value: u16) -> Result<Self> {
+        match value {
+            0 => Ok(InformationType::String),
+            1 => Ok(InformationType::SysDescr),
+            2 => Ok(InformationType::SysName),
+
+            v @ _ => Err(
+                Error::decode(&format!("invalid value for BMP Information Type: {}", v))
+            ),
         }
     }
 }
@@ -206,8 +219,8 @@ pub struct PeerHeader {
 }
 
 impl PeerHeader {
-    pub(super) fn decode(buf: &mut BytesMut) -> Result<Self, Error> {
-        let peer_type: PeerType = buf.get_u8().into();
+    pub(super) fn decode(buf: &mut BytesMut) -> Result<Self> {
+        let peer_type: PeerType = buf.get_u8().try_into()?;
         let peer_flags: PeerFlags = buf.get_u8().into();
         let peer_distinguisher = (buf.get_u32(), buf.get_u32());
 
@@ -265,8 +278,8 @@ pub struct InformationTlv {
 }
 
 impl InformationTlv {
-    pub(super) fn decode(kind: u16, buf: &mut BytesMut) -> Result<Self, Error> {
-        let information_type = InformationType::from(kind);
+    pub(super) fn decode(kind: u16, buf: &mut BytesMut) -> Result<Self> {
+        let information_type = InformationType::try_from(kind)?;
         let len = buf.get_u16() as usize;
 
         let value = String::from_utf8((buf.bytes())[..len].to_vec()).unwrap();
@@ -296,7 +309,7 @@ pub struct PeerUp {
 }
 
 impl PeerUp {
-    pub(super) fn decode(peer_flags: &PeerFlags, buf: &mut BytesMut) -> Result<Self, Error> {
+    pub(super) fn decode(peer_flags: &PeerFlags, buf: &mut BytesMut) -> Result<Self> {
         let local_addr = match peer_flags.V {
             // IPv4
             false => {

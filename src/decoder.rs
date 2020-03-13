@@ -1,4 +1,8 @@
-use crate::types::*;
+use crate::{
+    Error,
+    Result,
+    types::*,
+};
 
 use bgp_rs::Capabilities;
 use bytes::{
@@ -9,7 +13,7 @@ use bytes::{
 use hashbrown::HashMap;
 use tokio_util::codec::Decoder;
 
-use std::io::{Error, ErrorKind};
+use std::convert::TryInto;
 use std::net::IpAddr;
 
 // We need at least 5 bytes worth of the message in order to get the length
@@ -37,7 +41,7 @@ impl BmpDecoder {
         }
     }
 
-    fn decode_head(&mut self, src: &mut BytesMut) -> std::io::Result<Option<(u8, usize)>> {
+    fn decode_head(&mut self, src: &mut BytesMut) -> Result<Option<(u8, usize)>> {
         if src.len() < BMP_HEADER_LEN {
             return Ok(None);
         }
@@ -51,7 +55,7 @@ impl BmpDecoder {
         Ok(Some((version, remaining)))
     }
 
-    fn decode_data(&mut self, version: u8, length: usize, src: &mut BytesMut) -> std::io::Result<Option<BmpMessage>> {
+    fn decode_data(&mut self, version: u8, length: usize, src: &mut BytesMut) -> Result<Option<BmpMessage>> {
         // The BytesMut should already have the required capacity reserved so if we haven't read
         // the entire message yet, just keep on reading!
         if src.len() < length {
@@ -62,7 +66,7 @@ impl BmpDecoder {
         let mut buf = src.split_to(length);
 
         // Now decode based on the MessageKind
-        let kind: MessageKind = buf.get_u8().into();
+        let kind: MessageKind = buf.get_u8().try_into()?;
         let message = match kind {
             MessageKind::Initiation => {
                 let mut tlv = vec![];
@@ -123,19 +127,11 @@ impl BmpDecoder {
                 let peer_header = PeerHeader::decode(&mut buf)?;
                 let capabilities = self.client_capabilities.get(&peer_header.peer_addr)
                     // .ok_or_else(|| format_err!("No capabilities found for neighbor {}", peer_header.peer_addr))?;
-                    .ok_or_else(|| Error::new(ErrorKind::Other, format!("No capabilities found for neighbor {}", peer_header.peer_addr)))?;
+                    .ok_or_else(|| Error::decode(&format!("No capabilities found for neighbor {}", peer_header.peer_addr)))?;
 
                 let mut rdr = buf.reader();
                 let header = bgp_rs::Header::parse(&mut rdr)?;
                 let update = bgp_rs::Update::parse(&header, &mut rdr, &capabilities)?;
-                // let update = match bgp_rs::Update::parse(&header, &mut cur, &capabilities) {
-                //     Ok(u) => Ok(u),
-                //     Err(e) => {
-                //         log::error!("{}", e);
-                //         dbg!(version, length, kind, &peer_header, &capabilities);
-                //         Err(e)
-                //     }
-                // }?;
 
                 MessageData::RouteMonitoring((peer_header, update))
             },

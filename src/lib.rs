@@ -10,9 +10,18 @@
 //! a valid set of headers, failures on decoding the inner BGP messages will be handled via Result<T>
 
 mod decoder;
-pub use decoder::BmpDecoder;
-/// Some docs ay
+mod error;
+
+/// Contains types and decode implementations
 pub mod types;
+
+/// Error type
+pub use error::Error;
+/// Some docs ay
+pub use decoder::BmpDecoder;
+
+/// Result type wrapper
+pub type Result<T> = std::result::Result<T, error::Error>;
 
 #[cfg(test)]
 mod tests {
