@@ -1,6 +1,6 @@
 use crate::types::*;
 
-use bgp_rs::{AFI, SAFI, AddPathDirection, Capabilities};
+use bgp_rs::Capabilities;
 use bytes::{
     Buf,
     buf::BufExt,
@@ -106,11 +106,6 @@ impl BmpDecoder {
 
                                 let mut caps = Capabilities::default();
                                 if !peer_header.peer_flags.A { caps.FOUR_OCTET_ASN_SUPPORT = true; }
-
-                                // test
-                                if peer_header.peer_addr == IpAddr::V4("2.255.248.139".parse().unwrap()) {
-                                    caps.ADD_PATH_SUPPORT.insert((AFI::IPV6, SAFI::Mpls), AddPathDirection::ReceivePaths);
-                                }
 
                                 caps
                             }
