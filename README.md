@@ -9,7 +9,7 @@ We provide a `Decoder` ready to be used with a `tokio_util::codec::FramedRead` i
 
 ```toml
 # Cargo.toml
-bmp-protocol = { git = "https://github.com/ccakes/bmp-protocol-rs" }
+bmp-protocol = "^0.1"
 ```
 
 ```rust
