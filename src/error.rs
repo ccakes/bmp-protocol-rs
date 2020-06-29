@@ -5,6 +5,8 @@ pub enum Error {
     DecodeError(String),
     /// std::io::Error
     WireError(std::io::Error),
+    // Invalid length read
+    // InvalidMessageLength,
 
     /// Any boxed error that implement std::error::Error
     Unknown(Box<dyn std::error::Error + Send + Sync>)
@@ -25,6 +27,7 @@ impl std::fmt::Display for Error {
         match self {
             Self::DecodeError(error) => write!(f, "Decoding error: {}", error),
             Self::WireError(error) => write!(f, "IO error: {}", error),
+            // Self::InvalidMessageLength => write!(f, "Invalid message size: {} bytes", error),
 
             Self::Unknown(error) => write!(f, "Unknown error: {}", error),
         }

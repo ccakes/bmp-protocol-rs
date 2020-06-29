@@ -1,5 +1,13 @@
 Revision history for bmp-protocol
 
+0.1.3
+        - Add PeerDown message parsing
+        - Add basic Adj-RIB-Out support (RFC8671)
+        - Depend on bgp-rs 0.6 so we can finally do a crates.io release
+
+0.1.2
+        - Restore capabilities evaluation for monitored BGP sessions
+
 0.1.1
         - Remove some erroneous panics
 

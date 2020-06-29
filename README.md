@@ -1,6 +1,6 @@
 # bmp-protocol
 
-This crate implements a simple BMP packet decoder. It can decode BMP v3 packets and will use `bgp-rs`
+This crate implements a simple BMP packet decoder. It can decode BMP v3 packets and will use [`bgp-rs`](https://github.com/DevQps/bgp-rs)
 to decode any BGP messages contained within the BMP data.
 
 We provide a `Decoder` ready to be used with a `tokio_util::codec::FramedRead` instance to provide decoded BMP messages to a consumer. See [`bmp-client`](https://github.com/ccakes/bmp-client-rs) for a working example of this.

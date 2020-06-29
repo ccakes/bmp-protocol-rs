@@ -4,7 +4,7 @@ use bytes::{
     buf::BufExt,
     BytesMut
 };
-use serde_derive::Serialize;
+// use serde_derive::Serialize;
 
 use std::convert::{TryFrom, TryInto};
 use std::fmt;
@@ -12,7 +12,7 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 /// There are a few different types of BMP message, refer to RFC7xxx for details. This enum
 /// encapsulates the different types
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug)]
 pub enum MessageData {
     /// Used to represent a message type I haven't implemented yet
     Unimplemented,
@@ -22,12 +22,14 @@ pub enum MessageData {
     /// PeerUp messages are sent in bulk when a session is initially established, then over the life
     /// of the session as peers change status
     PeerUp((PeerHeader, PeerUp)),
+    /// PeerDown messages are sent when a peer disconnects
+    PeerDown((PeerHeader, PeerDown)),
     /// RouteMonitoring messages are state-compressed BGP messages
     RouteMonitoring((PeerHeader, bgp_rs::Update)),
 }
 
 /// BMP Message Types (RFC7854 Section 10.1)
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 #[repr(u8)]
 pub enum MessageKind {
     /// Route Monitoring
@@ -83,7 +85,7 @@ impl fmt::Display for MessageKind {
 }
 
 /// BMP Peer Types (RFC7854 Section 10.2)
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 #[repr(u8)]
 pub enum PeerType {
     /// Global Instance Peer
@@ -121,7 +123,7 @@ impl fmt::Display for PeerType {
 }
 
 /// BMP Peer Flags (RFC7854 Section 10.3)
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 #[allow(non_snake_case)]
 pub struct PeerFlags {
     /// Indicates whether the Peer address is an IPv6 addr
@@ -130,6 +132,8 @@ pub struct PeerFlags {
     pub L: bool,
     /// Indicates whether the message is using 2-byte AS_PATH format
     pub A: bool,
+    /// Indicated whether the message is Adj-RIB-In or Adj-RIB-Out
+    pub O: bool,
 }
 
 #[allow(non_snake_case)]
@@ -138,13 +142,14 @@ impl From<u8> for PeerFlags {
         let V = value & 0b10000000 == 0b10000000;
         let L = value & 0b01000000 == 0b01000000;
         let A = value & 0b00100000 == 0b00100000;
+        let O = value & 0b00010000 == 0b00010000;
 
-        Self { V, L, A}
+        Self { V, L, A, O }
     }
 }
 
 /// BMP Initiation Message TLVs (RFC7854 Section 10.5)
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum InformationType {
     /// Generic String
     String,
@@ -181,7 +186,7 @@ impl fmt::Display for InformationType {
 }
 
 /// Message contaner
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug)]
 pub struct BmpMessage {
     /// BMP version (should be 3)
     pub version: u8,
@@ -198,7 +203,7 @@ pub struct BmpMessage {
 /// The per-peer header follows the common header for most BMP messages.
 /// The rest of the data in a BMP message is dependent on the MessageKind
 /// field in the common header.
-#[derive(Copy, Clone, Debug, Serialize)]
+#[derive(Copy, Clone, Debug)]
 pub struct PeerHeader {
     /// Peer Type
     pub peer_type: PeerType,
@@ -269,7 +274,7 @@ impl PeerHeader {
 /// Information TLV
 ///
 /// The Information TLV is used by the Initiation and Peer Up messages.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug)]
 pub struct InformationTlv {
     /// TLV message type
     pub information_type: InformationType,
@@ -292,7 +297,7 @@ impl InformationTlv {
 ///
 /// The Peer Up message is used to indicate that a peering session has
 /// come up (i.e., has transitioned into the Established state).
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug)]
 pub struct PeerUp {
     /// Local IP address used in BGP TCP session
     pub local_addr: IpAddr,
@@ -363,5 +368,58 @@ impl PeerUp {
             recv_open,
             information
         })
+    }
+}
+
+/// Peer Down
+///
+/// The Peer Down message is used to indicate that the collector will no longer be receiving updates
+/// for a given neighbour, including the reason for the change
+#[derive(Clone, Debug)]
+#[non_exhaustive]
+pub enum PeerDown {
+    // LocalShutdown(bgp_rs::Notification),
+    /// The session was cleanly shutdown
+    LocalShutdown(bgp_rs::Notification),
+    /// The session was terminated because the underlying transport session was terminated,
+    /// no NOTIFICATION was sent or received
+    LocalTerminate(u16),
+    /// The session was cleanly shutdown by the remote peer
+    RemoteShutdown(bgp_rs::Notification),
+    /// The session was terminated because the underlying transport session was terminated,
+    /// no NOTIFICATION was sent or received
+    RemoteTerminate,
+    /// The session hasn't necessarily been torn down, but a configuration change on the BMP
+    /// speaker means the collector will no longer receive updates for the session
+    ConfigurationChange,
+}
+
+impl PeerDown {
+    pub(super) fn decode(buf: &mut BytesMut) -> Result<Self> {
+        let reason = buf.get_u8();
+
+        match reason {
+            1 => {
+                let mut rdr = buf.reader();
+                let header = bgp_rs::Header::parse(&mut rdr)?;
+                let notification = bgp_rs::Notification::parse(&header, &mut rdr)?;
+
+                Ok(Self::LocalShutdown(notification))
+                // Ok(Self::LocalShutdown)
+            },
+            2 => Ok(Self::LocalTerminate(buf.get_u16())),
+            3 => {
+                let mut rdr = buf.reader();
+                let header = bgp_rs::Header::parse(&mut rdr)?;
+                let notification = bgp_rs::Notification::parse(&header, &mut rdr)?;
+
+                Ok(Self::RemoteShutdown(notification))
+                // Ok(Self::RemoteShutdown)
+            },
+            4 => Ok(Self::RemoteTerminate),
+            5 => Ok(Self::ConfigurationChange),
+
+            v @ _ => Err(Error::decode(&format!("invalid value for BMP Peer Down reason: {}", v)))
+        }
     }
 }

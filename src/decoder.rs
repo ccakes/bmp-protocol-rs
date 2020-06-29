@@ -19,6 +19,65 @@ use std::net::IpAddr;
 // We need at least 5 bytes worth of the message in order to get the length
 const BMP_HEADER_LEN: usize = 5;
 
+/// Work out the common set of capabilities on a peering session
+fn common_capabilities(source: &Capabilities, other: &Capabilities) -> Capabilities {
+    // And (manually) build an intersection between the two
+    let mut negotiated = Capabilities::default();
+
+    negotiated.MP_BGP_SUPPORT = source
+        .MP_BGP_SUPPORT
+        .intersection(&other.MP_BGP_SUPPORT)
+        .copied()
+        .collect();
+    negotiated.ROUTE_REFRESH_SUPPORT = source.ROUTE_REFRESH_SUPPORT & other.ROUTE_REFRESH_SUPPORT;
+    negotiated.OUTBOUND_ROUTE_FILTERING_SUPPORT = source
+        .OUTBOUND_ROUTE_FILTERING_SUPPORT
+        .intersection(&other.OUTBOUND_ROUTE_FILTERING_SUPPORT)
+        .copied()
+        .collect();
+
+    // Attempt at a HashMap intersection. We can be a bit lax here because this isn't a real BGP implementation
+    // so we can not care too much about the values for now.
+    negotiated.EXTENDED_NEXT_HOP_ENCODING = source
+        .EXTENDED_NEXT_HOP_ENCODING
+        .iter()
+        // .filter(|((afi, safi), _)| other.EXTENDED_NEXT_HOP_ENCODING.contains_key(&(*afi, *safi)))
+        .map(|((afi, safi), nexthop)| ((*afi, *safi), *nexthop))
+        .collect();
+
+    negotiated.BGPSEC_SUPPORT = source.BGPSEC_SUPPORT & other.BGPSEC_SUPPORT;
+
+    negotiated.MULTIPLE_LABELS_SUPPORT = source
+        .MULTIPLE_LABELS_SUPPORT
+        .iter()
+        .filter(|((afi, safi), _)| other.MULTIPLE_LABELS_SUPPORT.contains_key(&(*afi, *safi)))
+        .map(|((afi, safi), val)| ((*afi, *safi), *val))
+        .collect();
+
+    negotiated.GRACEFUL_RESTART_SUPPORT = source
+        .GRACEFUL_RESTART_SUPPORT
+        .intersection(&other.GRACEFUL_RESTART_SUPPORT)
+        .copied()
+        .collect();
+    negotiated.FOUR_OCTET_ASN_SUPPORT =
+        source.FOUR_OCTET_ASN_SUPPORT & other.FOUR_OCTET_ASN_SUPPORT;
+
+    negotiated.ADD_PATH_SUPPORT = source
+        .ADD_PATH_SUPPORT
+        .iter()
+        .filter(|((afi, safi), _)| other.ADD_PATH_SUPPORT.contains_key(&(*afi, *safi)))
+        .map(|((afi, safi), val)| ((*afi, *safi), *val))
+        .collect();
+    negotiated.EXTENDED_PATH_NLRI_SUPPORT = !negotiated.ADD_PATH_SUPPORT.is_empty();
+
+    negotiated.ENHANCED_ROUTE_REFRESH_SUPPORT =
+        source.ENHANCED_ROUTE_REFRESH_SUPPORT & other.ENHANCED_ROUTE_REFRESH_SUPPORT;
+    negotiated.LONG_LIVED_GRACEFUL_RESTART =
+        source.LONG_LIVED_GRACEFUL_RESTART & other.LONG_LIVED_GRACEFUL_RESTART;
+
+    negotiated
+}
+
 #[derive(Clone, Debug)]
 enum DecoderState {
     Head,
@@ -51,6 +110,7 @@ impl BmpDecoder {
         let remaining = length - BMP_HEADER_LEN;
 
         src.reserve(remaining);
+        tracing::trace!(buf_capacity = %src.capacity());
 
         Ok(Some((version, remaining)))
     }
@@ -92,14 +152,10 @@ impl BmpDecoder {
                     .or_insert_with(|| {
                         match (&message.sent_open, &message.recv_open) {
                             (Some(s), Some(r)) => {
-                                let local_caps = Capabilities::from_parameters(&s.parameters);
-                                let remote_caps = Capabilities::from_parameters(&r.parameters);
+                                let local_caps = Capabilities::from_parameters(s.parameters.clone());
+                                let remote_caps = Capabilities::from_parameters(r.parameters.clone());
 
-                                let mut caps = Capabilities::common(&local_caps, &remote_caps)
-                                    .unwrap_or_else(|e| {
-                                        tracing::warn!("Error parsing BGP OPENs (local: {} remote: {}): {}", message.local_addr, peer_header.peer_addr, e);
-                                        Capabilities::default()
-                                    });
+                                let mut caps = common_capabilities(&local_caps, &remote_caps);
 
                                 // Use the BMP header val, not the negotiated val
                                 if !peer_header.peer_flags.A { caps.FOUR_OCTET_ASN_SUPPORT = true; }
@@ -121,7 +177,12 @@ impl BmpDecoder {
             },
             MessageKind::PeerDown => {
                 // Make sure to clean up self.capabilities
-                MessageData::Unimplemented
+                let peer_header = PeerHeader::decode(&mut buf)?;
+                let message = PeerDown::decode(&mut buf)?;
+
+                self.client_capabilities.remove(&peer_header.peer_addr);
+
+                MessageData::PeerDown((peer_header, message))
             },
             MessageKind::RouteMonitoring => {
                 let peer_header = PeerHeader::decode(&mut buf)?;
